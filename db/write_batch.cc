@@ -102,6 +102,7 @@ void WriteBatch::Put(const Slice& key, const Slice& value) {
   PutLengthPrefixedSlice(&rep_, value);
 }
 
+// TODO: 删除key,增加一个删除类型的key,删除操作何时执行???
 void WriteBatch::Delete(const Slice& key) {
   WriteBatchInternal::SetCount(this, WriteBatchInternal::Count(this) + 1);
   rep_.push_back(static_cast<char>(kTypeDeletion));
@@ -129,6 +130,8 @@ class MemTableInserter : public WriteBatch::Handler {
 };
 }  // namespace
 
+// WriteBatch中的sequence在DBImpl::Write主流程中更新
+// 功能：将WriteBatch中的数据写入MemTable
 Status WriteBatchInternal::InsertInto(const WriteBatch* b, MemTable* memtable) {
   MemTableInserter inserter;
   inserter.sequence_ = WriteBatchInternal::Sequence(b);

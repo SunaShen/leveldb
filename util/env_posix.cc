@@ -300,17 +300,21 @@ class PosixWritableFile final : public WritableFile {
     write_data += copy_size;
     write_size -= copy_size;
     pos_ += copy_size;
+    // 使用内存buffer足以存储data，直接返回
     if (write_size == 0) {
       return Status::OK();
     }
 
     // Can't fit in buffer, so need to do at least one write.
+    // 内存buffer空间不够了，将buffer内容写入到文件中，此时buffer又可用了，pos_=0;
     Status status = FlushBuffer();
     if (!status.ok()) {
       return status;
     }
 
     // Small writes go to buffer, large writes are written directly.
+    // 剩余需要写入的数据大小小于buffer的大小，还是先写入buffer中，
+    // 否则直接将剩余所有的数据直接一次性写入文件中
     if (write_size < kWritableFileBufferSize) {
       std::memcpy(buf_, write_data, write_size);
       pos_ = write_size;
@@ -353,6 +357,7 @@ class PosixWritableFile final : public WritableFile {
  private:
   Status FlushBuffer() {
     Status status = WriteUnbuffered(buf_, pos_);
+    // buffer中内容全部刷盘完毕，pos回归初始位置
     pos_ = 0;
     return status;
   }
@@ -811,12 +816,14 @@ PosixEnv::PosixEnv()
       mmap_limiter_(MaxMmaps()),
       fd_limiter_(MaxOpenFiles()) {}
 
+// 后台任务处理函数
 void PosixEnv::Schedule(
     void (*background_work_function)(void* background_work_arg),
     void* background_work_arg) {
   background_work_mutex_.Lock();
 
   // Start the background thread, if we haven't done so already.
+  // 延迟创建后台线程，使用时再创建
   if (!started_background_thread_) {
     started_background_thread_ = true;
     std::thread background_thread(PosixEnv::BackgroundThreadEntryPoint, this);
@@ -824,29 +831,35 @@ void PosixEnv::Schedule(
   }
 
   // If the queue is empty, the background thread may be waiting for work.
+  // 任务队列为空，发送信号，通知后台线程准备从任务队列中取任务函数执行
   if (background_work_queue_.empty()) {
     background_work_cv_.Signal();
   }
 
+  // 将当前任务函数放入任务队列
   background_work_queue_.emplace(background_work_function, background_work_arg);
   background_work_mutex_.Unlock();
 }
 
+// 后台线程主函数
 void PosixEnv::BackgroundThreadMain() {
   while (true) {
     background_work_mutex_.Lock();
 
     // Wait until there is work to be done.
+    // 任务队列为空，等待新的任务
     while (background_work_queue_.empty()) {
       background_work_cv_.Wait();
     }
 
     assert(!background_work_queue_.empty());
+    // 任务队列，先入先出，取队头任务处理
     auto background_work_function = background_work_queue_.front().function;
     void* background_work_arg = background_work_queue_.front().arg;
     background_work_queue_.pop();
 
     background_work_mutex_.Unlock();
+    // 执行任务函数
     background_work_function(background_work_arg);
   }
 }

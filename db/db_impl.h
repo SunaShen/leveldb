@@ -26,6 +26,7 @@ class Version;
 class VersionEdit;
 class VersionSet;
 
+// leveldb入口，包含Put和Get接口
 class DBImpl : public DB {
  public:
   DBImpl(const Options& options, const std::string& dbname);

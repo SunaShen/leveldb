@@ -97,6 +97,7 @@ class LEVELDB_EXPORT Status {
   //    state_[0..3] == length of message
   //    state_[4]    == code
   //    state_[5..]  == message
+  // (uint32_t)10 + (char)1 + msg1 + ": " + msg2
   const char* state_;
 };
 
@@ -107,6 +108,7 @@ inline Status& Status::operator=(const Status& rhs) {
   // The following condition catches both aliasing (when this == &rhs),
   // and the common case where both rhs and *this are ok.
   if (state_ != rhs.state_) {
+    // TODO: if state_ == nullptr ???
     delete[] state_;
     state_ = (rhs.state_ == nullptr) ? nullptr : CopyState(rhs.state_);
   }
