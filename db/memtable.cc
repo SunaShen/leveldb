@@ -23,8 +23,11 @@ MemTable::MemTable(const InternalKeyComparator& comparator)
 
 MemTable::~MemTable() { assert(refs_ == 0); }
 
+// 内存使用量
 size_t MemTable::ApproximateMemoryUsage() { return arena_.MemoryUsage(); }
 
+// 将包含长度的char* 解析成slice
+// 并调用合并器，将两个slice合并
 int MemTable::KeyComparator::operator()(const char* aptr,
                                         const char* bptr) const {
   // Internal keys are encoded as length-prefixed strings.
@@ -36,6 +39,7 @@ int MemTable::KeyComparator::operator()(const char* aptr,
 // Encode a suitable internal key target for "target" and return it.
 // Uses *scratch as scratch space, and the returned pointer will point
 // into this scratch space.
+// 将slice结构解析为包含长度的字符串
 static const char* EncodeKey(std::string* scratch, const Slice& target) {
   scratch->clear();
   PutVarint32(scratch, target.size());
@@ -61,6 +65,7 @@ class MemTableIterator : public Iterator {
   Slice key() const override { return GetLengthPrefixedSlice(iter_.key()); }
   Slice value() const override {
     Slice key_slice = GetLengthPrefixedSlice(iter_.key());
+    // key后面紧跟的就是val
     return GetLengthPrefixedSlice(key_slice.data() + key_slice.size());
   }
 
@@ -87,21 +92,29 @@ void MemTable::Add(SequenceNumber s, ValueType type, const Slice& key,
   const size_t encoded_len = VarintLength(internal_key_size) +
                              internal_key_size + VarintLength(val_size) +
                              val_size;
+  // 分配内存
   char* buf = arena_.Allocate(encoded_len);
+  // 将数据长度internal_key_size写入buf头部
   char* p = EncodeVarint32(buf, internal_key_size);
+  // 将key的数据copy至buf
   std::memcpy(p, key.data(), key_size);
   p += key_size;
+  // 将tag = (seq << 8) | type 写入buffer 共 8byte = 64bit
   EncodeFixed64(p, (s << 8) | type);
   p += 8;
+  // 将数据长度val_size写入buf
   p = EncodeVarint32(p, val_size);
+  // 将val的数据copy至buf
   std::memcpy(p, value.data(), val_size);
   assert(p + val_size == buf + encoded_len);
+  // 将该块数据放入跳表
   table_.Insert(buf);
 }
 
 bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
   Slice memkey = key.memtable_key();
   Table::Iterator iter(&table_);
+  // 跳表中查找当前key对应的val
   iter.Seek(memkey.data());
   if (iter.Valid()) {
     // entry format is:
@@ -113,9 +126,12 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
     // Check that it belongs to same user key.  We do not check the
     // sequence number since the Seek() call above should have skipped
     // all entries with overly large sequence numbers.
+    // 得到val所对应的地址，从中解析数据
     const char* entry = iter.key();
     uint32_t key_length;
+    // 获得数据长度，并去掉varint32的头
     const char* key_ptr = GetVarint32Ptr(entry, entry + 5, &key_length);
+    // 对比查到的key是否和需要的key一致
     if (comparator_.comparator.user_comparator()->Compare(
             Slice(key_ptr, key_length - 8), key.user_key()) == 0) {
       // Correct user key

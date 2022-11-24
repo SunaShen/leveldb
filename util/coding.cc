@@ -18,6 +18,7 @@ void PutFixed64(std::string* dst, uint64_t value) {
   dst->append(buf, sizeof(buf));
 }
 
+// dst开头写入变长的v，并将dst移动到下一个可以写入的位置
 char* EncodeVarint32(char* dst, uint32_t v) {
   // Operate on characters as unsigneds
   uint8_t* ptr = reinterpret_cast<uint8_t*>(dst);
@@ -74,6 +75,7 @@ void PutLengthPrefixedSlice(std::string* dst, const Slice& value) {
   dst->append(value.data(), value.size());
 }
 
+// 求需要多少字节
 int VarintLength(uint64_t v) {
   int len = 1;
   while (v >= 128) {

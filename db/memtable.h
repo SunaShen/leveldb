@@ -40,6 +40,7 @@ class MemTable {
 
   // Returns an estimate of the number of bytes of data in use by this
   // data structure. It is safe to call when MemTable is being modified.
+  // 内存使用量
   size_t ApproximateMemoryUsage();
 
   // Return an iterator that yields the contents of the memtable.
@@ -79,7 +80,7 @@ class MemTable {
   KeyComparator comparator_;
   int refs_;
   Arena arena_;
-  Table table_;
+  Table table_;  // 跳表
 };
 
 }  // namespace leveldb
