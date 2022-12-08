@@ -40,7 +40,7 @@ class MemTable {
 
   // Returns an estimate of the number of bytes of data in use by this
   // data structure. It is safe to call when MemTable is being modified.
-  // 内存使用量
+  // 内存使用量，包含分配的内存大小 + 保存该内存地址的首地址指针大小(sizeof(char*))
   size_t ApproximateMemoryUsage();
 
   // Return an iterator that yields the contents of the memtable.
@@ -77,9 +77,10 @@ class MemTable {
 
   ~MemTable();  // Private since only Unref() should be used to delete it
 
+  // 存储数据的比较器，用于跳表中排序使用，一个仿函数，具体如何比较看其传入的比较器
   KeyComparator comparator_;
   int refs_;
-  Arena arena_;
+  Arena arena_;  // 内存分配器
   Table table_;  // 跳表
 };
 

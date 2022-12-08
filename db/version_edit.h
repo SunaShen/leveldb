@@ -15,6 +15,7 @@ namespace leveldb {
 
 class VersionSet;
 
+// 文件meta信息
 struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
 
@@ -26,6 +27,7 @@ struct FileMetaData {
   InternalKey largest;   // Largest internal key served by table
 };
 
+// 记录各种状态信息
 class VersionEdit {
  public:
   VersionEdit() { Clear(); }
@@ -53,6 +55,7 @@ class VersionEdit {
     has_last_sequence_ = true;
     last_sequence_ = seq;
   }
+  // 设置合并点，记录里当前level以及key
   void SetCompactPointer(int level, const InternalKey& key) {
     compact_pointers_.push_back(std::make_pair(level, key));
   }
@@ -60,6 +63,7 @@ class VersionEdit {
   // Add the specified file at the specified number.
   // REQUIRES: This version has not been saved (see VersionSet::SaveTo)
   // REQUIRES: "smallest" and "largest" are smallest and largest keys in file
+  // 添加filemeta
   void AddFile(int level, uint64_t file, uint64_t file_size,
                const InternalKey& smallest, const InternalKey& largest) {
     FileMetaData f;

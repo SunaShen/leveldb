@@ -550,6 +550,7 @@ class PosixEnv : public Env {
       return PosixError(filename, errno);
     }
 
+    // 限制同时使用的数量
     if (!mmap_limiter_.Acquire()) {
       *result = new PosixRandomAccessFile(filename, fd, &fd_limiter_);
       return Status::OK();

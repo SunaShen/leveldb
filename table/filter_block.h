@@ -44,8 +44,10 @@ class FilterBlockBuilder {
   const FilterPolicy* policy_;
   std::string keys_;             // Flattened key contents
   std::vector<size_t> start_;    // Starting index in keys_ of each key
+  // 存储着布隆过滤器位数组信息，每个批次会构建一个布隆过滤器
   std::string result_;           // Filter data computed so far
   std::vector<Slice> tmp_keys_;  // policy_->CreateFilter() argument
+  // 存储每个批次布隆过滤器数据在result_上的offset
   std::vector<uint32_t> filter_offsets_;
 };
 
@@ -57,9 +59,13 @@ class FilterBlockReader {
 
  private:
   const FilterPolicy* policy_;
+  // 过滤器数据起始点
   const char* data_;    // Pointer to filter data (at block-start)
+  // 过滤器数据索引起始点
   const char* offset_;  // Pointer to beginning of offset array (at block-end)
+  // 过滤器批次数
   size_t num_;          // Number of entries in offset array
+  // 
   size_t base_lg_;      // Encoding parameter (see kFilterBaseLg in .cc file)
 };
 

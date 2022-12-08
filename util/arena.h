@@ -23,9 +23,11 @@ class Arena {
   ~Arena();
 
   // Return a pointer to a newly allocated memory block of "bytes" bytes.
+  // 返回内存块，不保证返回首地址为内存对齐的
   char* Allocate(size_t bytes);
 
   // Allocate memory with the normal alignment guarantees provided by malloc.
+  // 返回内存块，保证返回首地址为内存对齐的
   char* AllocateAligned(size_t bytes);
 
   // Returns an estimate of the total memory usage of data allocated
@@ -36,13 +38,16 @@ class Arena {
 
  private:
   char* AllocateFallback(size_t bytes);
+  // 使用new真实分配内存，并将分配好的内存block首地址存入blocks_
   char* AllocateNewBlock(size_t block_bytes);
 
   // Allocation state
+  // 记录分配的状态
   char* alloc_ptr_;
   size_t alloc_bytes_remaining_;
 
   // Array of new[] allocated memory blocks
+  // 存储new出来的各个block的首地址
   std::vector<char*> blocks_;
 
   // Total memory usage of the arena.
@@ -52,17 +57,20 @@ class Arena {
   std::atomic<size_t> memory_usage_;
 };
 
+// 从arena中获取bytes大小的内存
 inline char* Arena::Allocate(size_t bytes) {
   // The semantics of what to return are a bit messy if we allow
   // 0-byte allocations, so we disallow them here (we don't need
   // them for our internal use).
   assert(bytes > 0);
   if (bytes <= alloc_bytes_remaining_) {
+    // 当前有剩余足够大的分配好的内存空间，直接返回
     char* result = alloc_ptr_;
     alloc_ptr_ += bytes;
     alloc_bytes_remaining_ -= bytes;
     return result;
   }
+  // 
   return AllocateFallback(bytes);
 }
 

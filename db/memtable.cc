@@ -62,6 +62,7 @@ class MemTableIterator : public Iterator {
   void SeekToLast() override { iter_.SeekToLast(); }
   void Next() override { iter_.Next(); }
   void Prev() override { iter_.Prev(); }
+  // 注意：返回的key的末尾包含了 (seq << 8) | type 的8个字节
   Slice key() const override { return GetLengthPrefixedSlice(iter_.key()); }
   Slice value() const override {
     Slice key_slice = GetLengthPrefixedSlice(iter_.key());
@@ -115,6 +116,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
   Slice memkey = key.memtable_key();
   Table::Iterator iter(&table_);
   // 跳表中查找当前key对应的val
+  // 注意：跳表中的内容为 key + val, 因此此处查找只是前缀匹配，所以下面需要通过Compare再次确认
   iter.Seek(memkey.data());
   if (iter.Valid()) {
     // entry format is:

@@ -14,6 +14,7 @@ namespace leveldb {
 
 struct Options;
 
+// data_block构造器
 class BlockBuilder {
  public:
   explicit BlockBuilder(const Options* options);
@@ -43,9 +44,11 @@ class BlockBuilder {
  private:
   const Options* options_;
   std::string buffer_;              // Destination buffer
+  // 重启点，只有重启点的位置记录的key是完整的，各个重启点之间的key是使用前缀压缩的
   std::vector<uint32_t> restarts_;  // Restart points
   int counter_;                     // Number of entries emitted since restart
   bool finished_;                   // Has Finish() been called?
+  // 前一个key，用于前缀压缩
   std::string last_key_;
 };
 

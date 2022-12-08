@@ -628,6 +628,7 @@ class VersionSet::Builder {
   // Apply all of the edits in *edit to the current state.
   void Apply(const VersionEdit* edit) {
     // Update compaction pointers
+    // 记录各文件层级key
     for (size_t i = 0; i < edit->compact_pointers_.size(); i++) {
       const int level = edit->compact_pointers_[i].first;
       vset_->compact_pointer_[level] =

@@ -53,6 +53,7 @@ void BlockBuilder::Reset() {
 }
 
 size_t BlockBuilder::CurrentSizeEstimate() const {
+  // 最终生成的buffer的大小 = 原始数据大小 + 重启点数据大小 + 重启点size
   return (buffer_.size() +                       // Raw data buffer
           restarts_.size() * sizeof(uint32_t) +  // Restart array
           sizeof(uint32_t));                     // Restart array length
@@ -60,44 +61,57 @@ size_t BlockBuilder::CurrentSizeEstimate() const {
 
 Slice BlockBuilder::Finish() {
   // Append restart array
+  // 将重启点信息拼接在数据buffer后面
   for (size_t i = 0; i < restarts_.size(); i++) {
     PutFixed32(&buffer_, restarts_[i]);
   }
   PutFixed32(&buffer_, restarts_.size());
+  // finish后不允许再Add了
   finished_ = true;
   return Slice(buffer_);
 }
 
+// 添加kv数据
 void BlockBuilder::Add(const Slice& key, const Slice& value) {
+  // 前一次添加的key
   Slice last_key_piece(last_key_);
   assert(!finished_);
   assert(counter_ <= options_->block_restart_interval);
+  // 强制校验写入的数据是递增的
   assert(buffer_.empty()  // No values yet?
          || options_->comparator->Compare(key, last_key_piece) > 0);
   size_t shared = 0;
+  // 每间隔block_restart_interval个数据，记录一个重启点
+  // 每个重启点之间的范围内，使用前缀压缩来记录数据
   if (counter_ < options_->block_restart_interval) {
     // See how much sharing to do with previous string
     const size_t min_length = std::min(last_key_piece.size(), key.size());
+    // shaared 记录前一个key(last_key_piece) 与 当前key(key) 的最大公共前缀
     while ((shared < min_length) && (last_key_piece[shared] == key[shared])) {
       shared++;
     }
   } else {
     // Restart compression
+    // 记录buffer.size，其实也相当于offset
     restarts_.push_back(buffer_.size());
     counter_ = 0;
   }
+  // 公共前缀以外需要当单独记录的数据长度
   const size_t non_shared = key.size() - shared;
 
   // Add "<shared><non_shared><value_size>" to buffer_
+  // shared + non_shared = 组成一个完成的key
   PutVarint32(&buffer_, shared);
   PutVarint32(&buffer_, non_shared);
   PutVarint32(&buffer_, value.size());
 
   // Add string delta to buffer_ followed by value
+  // 前缀压缩，仅记录非公共前缀部分
   buffer_.append(key.data() + shared, non_shared);
   buffer_.append(value.data(), value.size());
 
   // Update state
+  // 将last_key_的数据更新为当前key的值
   last_key_.resize(shared);
   last_key_.append(key.data() + shared, non_shared);
   assert(Slice(last_key_) == key);

@@ -19,6 +19,7 @@ namespace leveldb {
 
 class Env;
 
+// 使用cache存储各个level文件的index_block信息，以及对应的文件的handle
 class TableCache {
  public:
   TableCache(const std::string& dbname, const Options& options, int entries);
@@ -35,11 +36,13 @@ class TableCache {
   // underlies the returned iterator.  The returned "*tableptr" object is owned
   // by the cache and should not be deleted, and is valid for as long as the
   // returned iterator is live.
+  // 返回指定file_number文件的迭代器，并且在tableptr非空的情况下，返回该迭代器对应的table实例
   Iterator* NewIterator(const ReadOptions& options, uint64_t file_number,
                         uint64_t file_size, Table** tableptr = nullptr);
 
   // If a seek to internal key "k" in specified file finds an entry,
   // call (*handle_result)(arg, found_key, found_value).
+  // 在指定file_number文件中查找key=k的数据，并且在找到该数据时执行回调函数handle_result
   Status Get(const ReadOptions& options, uint64_t file_number,
              uint64_t file_size, const Slice& k, void* arg,
              void (*handle_result)(void*, const Slice&, const Slice&));

@@ -70,8 +70,12 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
   // Read the block contents as well as the type/crc footer.
   // See table_builder.cc for the code that built this structure.
   size_t n = static_cast<size_t>(handle.size());
+  // 每个block的末尾包含Trailer,记录压缩类型和crc校验信息，共5Bytes = compression_type(1Btye) + crc(4Bytes)
   char* buf = new char[n + kBlockTrailerSize];
   Slice contents;
+  // contents 和 buf 是为了兼容两种文件读取模式
+  // 1. 真实读取文件，需要自己提供内存，此时使用buf
+  // 2. 文件加载到共享内存中，直接使用共享内存，此时buf就没有用了
   Status s = file->Read(handle.offset(), n + kBlockTrailerSize, &contents, buf);
   if (!s.ok()) {
     delete[] buf;
@@ -94,12 +98,14 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
     }
   }
 
+  // 判断压缩类型
   switch (data[n]) {
     case kNoCompression:
       if (data != buf) {
         // File implementation gave us pointer to some other data.
         // Use it directly under the assumption that it will be live
         // while the file is open.
+        // 此时使用的文件共享内存读取方式
         delete[] buf;
         result->data = Slice(data, n);
         result->heap_allocated = false;

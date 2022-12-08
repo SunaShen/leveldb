@@ -50,6 +50,7 @@ class TwoLevelIterator : public Iterator {
 
  private:
   void SaveError(const Status& s) {
+    // 不会覆盖已有的错误状态
     if (status_.ok() && !s.ok()) status_ = s;
   }
   void SkipEmptyDataBlocksForward();
@@ -68,12 +69,15 @@ class TwoLevelIterator : public Iterator {
   std::string data_block_handle_;
 };
 
+// 二级迭代器
+// index_iter -> data_iter -> key+val
 TwoLevelIterator::TwoLevelIterator(Iterator* index_iter,
                                    BlockFunction block_function, void* arg,
                                    const ReadOptions& options)
     : block_function_(block_function),
       arg_(arg),
       options_(options),
+      // index_block的迭代器
       index_iter_(index_iter),
       data_iter_(nullptr) {}
 
@@ -112,6 +116,7 @@ void TwoLevelIterator::Prev() {
   SkipEmptyDataBlocksBackward();
 }
 
+// 向后跳过无效数据
 void TwoLevelIterator::SkipEmptyDataBlocksForward() {
   while (data_iter_.iter() == nullptr || !data_iter_.Valid()) {
     // Move to next block
@@ -125,6 +130,7 @@ void TwoLevelIterator::SkipEmptyDataBlocksForward() {
   }
 }
 
+// 向前跳过无效数据
 void TwoLevelIterator::SkipEmptyDataBlocksBackward() {
   while (data_iter_.iter() == nullptr || !data_iter_.Valid()) {
     // Move to next block
@@ -147,13 +153,18 @@ void TwoLevelIterator::InitDataBlock() {
   if (!index_iter_.Valid()) {
     SetDataIterator(nullptr);
   } else {
+    // index_block中存储的都是key-val，其中val为对应每个block的block_handle(offset和data_size)
     Slice handle = index_iter_.value();
     if (data_iter_.iter() != nullptr &&
         handle.compare(data_block_handle_) == 0) {
       // data_iter_ is already constructed with this iterator, so
       // no need to change anything
+      // 此时的data_iter正是目标iter
     } else {
+      // 使用传入的函数对handle进行解析，最终得到数据块data_block的迭代器iter
       Iterator* iter = (*block_function_)(arg_, options_, handle);
+      // 将找到的block_handle(offset和data_size)存到data_block_handle_中
+      // 优化性能，当当前data_iter就是目标iter时不需要重新构造了
       data_block_handle_.assign(handle.data(), handle.size());
       SetDataIterator(iter);
     }
