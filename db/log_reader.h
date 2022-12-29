@@ -88,6 +88,7 @@ class Reader {
   SequentialFile* const file_;
   Reporter* const reporter_;
   bool const checksum_;
+  // 常量指针，预先分配kBlockSize大小的size内存，循环使用，临时存储读取出的每个block数据
   char* const backing_store_;
   Slice buffer_;
   bool eof_;  // Last Read() indicated EOF by returning < kBlockSize

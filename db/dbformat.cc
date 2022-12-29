@@ -50,6 +50,8 @@ int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
   //    decreasing sequence number
   //    decreasing type (though sequence# should be enough to disambiguate)
   int r = user_comparator_->Compare(ExtractUserKey(akey), ExtractUserKey(bkey));
+  // user_key相等的情况下继续判断 (seq << 8 | type)
+  // seq越大对应的internal_key值越小，internal_key升序排列的话，越新的值排在越前面
   if (r == 0) {
     const uint64_t anum = DecodeFixed64(akey.data() + akey.size() - 8);
     const uint64_t bnum = DecodeFixed64(bkey.data() + bkey.size() - 8);
@@ -58,6 +60,8 @@ int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
     } else if (anum < bnum) {
       r = +1;
     }
+    // 两个internal_key不可能user_key和seq都相等，因此type在当前compare中无意义，仅需观察user_key和seq
+    // kTypeDeletion = 0x0, kTypeValue = 0x1;
   }
   return r;
 }
@@ -123,6 +127,7 @@ LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
   if (needed <= sizeof(space_)) {
     dst = space_;
   } else {
+    // TODO : 谁来释放???
     dst = new char[needed];
   }
   start_ = dst;
@@ -130,6 +135,8 @@ LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
   kstart_ = dst;
   std::memcpy(dst, user_key.data(), usize);
   dst += usize;
+  // 根据user_key构建internal_key时使用的type为kValueTypeForSeek = kTypeValue，type不影响查找
+  // 看InternalKeyComparator::Compare的实现，仅会从internalkey中提取出user_key来判断，而忽略seq和type
   EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek));
   dst += 8;
   end_ = dst;

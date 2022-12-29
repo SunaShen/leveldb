@@ -75,6 +75,7 @@ std::string OldInfoLogFileName(const std::string& dbname) {
 //    dbname/LOG.old
 //    dbname/MANIFEST-[0-9]+
 //    dbname/[0-9]+.(log|sst|ldb)
+// leveldb各种类型文件的命名
 bool ParseFileName(const std::string& filename, uint64_t* number,
                    FileType* type) {
   Slice rest(filename);
@@ -105,6 +106,7 @@ bool ParseFileName(const std::string& filename, uint64_t* number,
     if (!ConsumeDecimalNumber(&rest, &num)) {
       return false;
     }
+    // 解析出数字后剩余的部分
     Slice suffix = rest;
     if (suffix == Slice(".log")) {
       *type = kLogFile;

@@ -192,6 +192,7 @@ class Block::Iter : public Iterator {
 
   // 定位到要找的数据的位置,target为要查找的目标key
   // 使用二分查找找到包含目标值的重启点
+  // 将当前iter执行到刚好大于等于target的地方，但无法保证一定是target，所以外面还需要继续判断
   void Seek(const Slice& target) override {
     // Binary search in restart array to find the last restart point
     // with a key < target

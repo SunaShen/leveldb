@@ -53,12 +53,14 @@ struct DBImpl::Writer {
 
 struct DBImpl::CompactionState {
   // Files produced by compaction
+  // 合并后生成文件的信息，类似FileMetaData???
   struct Output {
     uint64_t number;
     uint64_t file_size;
     InternalKey smallest, largest;
   };
 
+  // 返回最后一个文件
   Output* current_output() { return &outputs[outputs.size() - 1]; }
 
   explicit CompactionState(Compaction* c)
@@ -74,8 +76,10 @@ struct DBImpl::CompactionState {
   // will never have to service a snapshot below smallest_snapshot.
   // Therefore if we have seen a sequence number S <= smallest_snapshot,
   // we can drop all entries for the same key with sequence numbers < S.
+  // 小于该序列号(smallest_snapshot)的信息都将别忽略，过时的信息
   SequenceNumber smallest_snapshot;
 
+  // 记录本次合并期间生成的合并后的多个文件的信息
   std::vector<Output> outputs;
 
   // State kept for output being generated
@@ -222,6 +226,7 @@ void DBImpl::MaybeIgnoreError(Status* s) const {
   }
 }
 
+// 清除无用的文件
 void DBImpl::RemoveObsoleteFiles() {
   mutex_.AssertHeld();
 
@@ -232,28 +237,35 @@ void DBImpl::RemoveObsoleteFiles() {
   }
 
   // Make a set of all of the live files
+  // 获得当前有用的文件number
   std::set<uint64_t> live = pending_outputs_;
   versions_->AddLiveFiles(&live);
 
   std::vector<std::string> filenames;
+  // 获取该目录下所有文件
   env_->GetChildren(dbname_, &filenames);  // Ignoring errors on purpose
   uint64_t number;
   FileType type;
   std::vector<std::string> files_to_delete;
   for (std::string& filename : filenames) {
+    // 根据文件名&后缀归为不同类型文件进行处理
     if (ParseFileName(filename, &number, &type)) {
+      // 当前文件是否需要保留
       bool keep = true;
       switch (type) {
         case kLogFile:
+          // 只保存更新版本的log文件
           keep = ((number >= versions_->LogNumber()) ||
                   (number == versions_->PrevLogNumber()));
           break;
         case kDescriptorFile:
           // Keep my manifest file, and any newer incarnations'
           // (in case there is a race that allows other incarnations)
+          // 只保存更新版本的Manifest文件
           keep = (number >= versions_->ManifestFileNumber());
           break;
         case kTableFile:
+          // 判断sstable文件是否还有版本使用
           keep = (live.find(number) != live.end());
           break;
         case kTempFile:
@@ -269,8 +281,10 @@ void DBImpl::RemoveObsoleteFiles() {
       }
 
       if (!keep) {
+        // 加入待删除文件列表
         files_to_delete.push_back(std::move(filename));
         if (type == kTableFile) {
+          // 清除table_cache中缓存的文件
           table_cache_->Evict(number);
         }
         Log(options_.info_log, "Delete type=%d #%lld\n", static_cast<int>(type),
@@ -284,6 +298,7 @@ void DBImpl::RemoveObsoleteFiles() {
   // are therefore safe to delete while allowing other threads to proceed.
   mutex_.Unlock();
   for (const std::string& filename : files_to_delete) {
+    // 删除文件
     env_->RemoveFile(dbname_ + "/" + filename);
   }
   mutex_.Lock();
@@ -516,6 +531,7 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   Status s;
   {
     mutex_.Unlock();
+    // 将memtable格式文件写入新的文件中，并使用table_cache缓存住
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
   }
@@ -533,19 +549,28 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
     if (base != nullptr) {
+      // 根据当前生成文件的key的范围[min_user_key, max_user_key]，选择将该文件放在第几层
+      // 其中有一定的优化策略，以防止文件合并时开销过大
       level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
     }
+    // 将信息记录到version edit的中filemeta
+    // VersionEdit用来记录版本变化
     edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
                   meta.largest);
   }
 
   CompactionStats stats;
+  // 生成文件耗时
   stats.micros = env_->NowMicros() - start_micros;
+  // 写文件的大小
   stats.bytes_written = meta.file_size;
+  // 统计当前level的耗时、文件写入字节数等信息
   stats_[level].Add(stats);
   return s;
 }
 
+// 合并immutable memtable
+// 将imm内容写入l0级文件中
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
   assert(imm_ != nullptr);
@@ -713,15 +738,18 @@ void DBImpl::BackgroundCall() {
   background_work_finished_signal_.SignalAll();
 }
 
+// 后台合并任务
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
   if (imm_ != nullptr) {
+    // 当有immutable memtable时，先合并immutable memtable
     CompactMemTable();
     return;
   }
 
   Compaction* c;
+  // 是否手动压缩
   bool is_manual = (manual_compaction_ != nullptr);
   InternalKey manual_end;
   if (is_manual) {
@@ -737,6 +765,7 @@ void DBImpl::BackgroundCompaction() {
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
+    // 获得本次待合并文件列表等信息
     c = versions_->PickCompaction();
   }
 
@@ -745,11 +774,14 @@ void DBImpl::BackgroundCompaction() {
     // Nothing to do
   } else if (!is_manual && c->IsTrivialMove()) {
     // Move file to next level
+    // 当前层只有一个待合并文件，上一层没有与该文件有交集的文件，并且上上一层与该文件交集的总文件大小于20Mb时才可以直接移动
     assert(c->num_input_files(0) == 1);
     FileMetaData* f = c->input(0, 0);
+    // 将该文件从level层移出，加入level+1层
     c->edit()->RemoveFile(c->level(), f->number);
     c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
                        f->largest);
+    // 应用该变更
     status = versions_->LogAndApply(c->edit(), &mutex_);
     if (!status.ok()) {
       RecordBackgroundError(status);
@@ -760,6 +792,7 @@ void DBImpl::BackgroundCompaction() {
         static_cast<unsigned long long>(f->file_size),
         status.ToString().c_str(), versions_->LevelSummary(&tmp));
   } else {
+    // compact过程中可能会生成多个合并后的文件(每个文件的大小有限)，所以使用CompactionState来记录该信息 
     CompactionState* compact = new CompactionState(c);
     status = DoCompactionWork(compact);
     if (!status.ok()) {
@@ -811,6 +844,7 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
   delete compact;
 }
 
+// 创建一个新的table文件，用于存放新的合并后结果
 Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   assert(compact != nullptr);
   assert(compact->builder == nullptr);
@@ -828,6 +862,7 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   }
 
   // Make the output file
+  // 文件名为 db_name_/file_number.ldb
   std::string fname = TableFileName(dbname_, file_number);
   Status s = env_->NewWritableFile(fname, &compact->outfile);
   if (s.ok()) {
@@ -836,6 +871,7 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   return s;
 }
 
+// 完成当前新创建的用于存储新的合并后结果的的table文件(size达到要求)
 Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
                                           Iterator* input) {
   assert(compact != nullptr);
@@ -849,6 +885,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
   Status s = input->status();
   const uint64_t current_entries = compact->builder->NumEntries();
   if (s.ok()) {
+    // 文件中数据写入完毕，将这些数据从buffer中落盘并在后面补上index_block、filter_block和footer信息
     s = compact->builder->Finish();
   } else {
     compact->builder->Abandon();
@@ -871,6 +908,7 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
 
   if (s.ok() && current_entries > 0) {
     // Verify that the table is usable
+    // 验证下新创建的sstable文件是可用的，读取下，将其handle缓存在table_cache中
     Iterator* iter =
         table_cache_->NewIterator(ReadOptions(), output_number, current_bytes);
     s = iter->status();
@@ -893,16 +931,20 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
       static_cast<long long>(compact->total_bytes));
 
   // Add compaction outputs
+  // 执行合并操作后，将合并前的文件加入删除列表
   compact->compaction->AddInputDeletions(compact->compaction->edit());
   const int level = compact->compaction->level();
+  // 合并后的文件加入新生成文件列表
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
     compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
                                          out.smallest, out.largest);
   }
+  // 创建一个新版本version，并应用当前变更
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
+// sstable文件合并任务
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
@@ -921,6 +963,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
   }
 
+  // 将待合并文件组成一个迭代器，直接遍历该迭代器即可得到按key升序排列的k-v数据
+  // 迭代器的实现为MergingIterator
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
 
   // Release mutex while we're actually doing the compaction work
@@ -929,11 +973,13 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   input->SeekToFirst();
   Status status;
   ParsedInternalKey ikey;
+  // 用于记录前一次处理的user_key，对于包含多个版本的user_key时，可以跳过老版本的user_key
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
   while (input->Valid() && !shutting_down_.load(std::memory_order_acquire)) {
     // Prioritize immutable compaction work
+    // 每遍历一条kv就判断下是否有imm_table，有的话优先执行
     if (has_imm_.load(std::memory_order_relaxed)) {
       const uint64_t imm_start = env_->NowMicros();
       mutex_.Lock();
@@ -947,6 +993,8 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     }
 
     Slice key = input->key();
+    // 当新合并的文件(level+1层)与level+2层重叠的文件大小超过20Mb，则需要重新生成一个新合并的文件了
+    // 以防止下一次level+1和level+2合并时牵扯的文件过多
     if (compact->compaction->ShouldStopBefore(key) &&
         compact->builder != nullptr) {
       status = FinishCompactionOutputFile(compact, input);
@@ -956,9 +1004,11 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     }
 
     // Handle key/value, add to state, etc.
+    // 标记当前kv数据是否需要废弃
     bool drop = false;
     if (!ParseInternalKey(key, &ikey)) {
       // Do not hide error keys
+      // 遇到非法internal_key，不废弃掉，而是保留原样，合并到新的文件中
       current_user_key.clear();
       has_current_user_key = false;
       last_sequence_for_key = kMaxSequenceNumber;
@@ -967,6 +1017,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
           user_comparator()->Compare(ikey.user_key, Slice(current_user_key)) !=
               0) {
         // First occurrence of this user key
+        // 满足以下任一条件，需要填充 / 更新current_user_key
+        // 1. 前一次临时存储的待处理的current_user_key为空，需要填充
+        // 2. 前一次临时存储的待处理的current_user_key和当前要处理的ikey.user_key不一致，需要更新
         current_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
         has_current_user_key = true;
         last_sequence_for_key = kMaxSequenceNumber;
@@ -974,6 +1027,21 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
       if (last_sequence_for_key <= compact->smallest_snapshot) {
         // Hidden by an newer entry for same user key
+
+        // 前一个key 小于等于 smallest_snapshot，可以表明这个key是在触发合并操作之前执行的变更。因此可以进行冗余处理。
+        // 而若last_sequence_for_key > smallest_snapshot, 则表示是触发合并操作之后又触发了新的变更
+        // (哪种情况会发生??MakeInputIterator已经固定了就是这批文件, snapshots_.empty()时smallest_snapshot取的是LastSequence，不会发生)
+        // TODO : !snapshots_.empty()情况下，使用snapshots的seq，此时待了解snapshots后分析
+        // if (snapshots_.empty()) {
+        //   compact->smallest_snapshot = versions_->LastSequence();
+        // } else {
+        //   compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
+        // }
+        // 此时还没轮到你compact，所以还是先保留着吧
+
+        // 当前key和前一个key相等(因为不相等的情况下会被更新为kMaxSequenceNumber)
+        // 多个相同的key，只会保留第一个，input->Next对于user_key相等的数据，优先返回seq更大的。
+        // 因此当上一轮已经出现过这个user_key之后，这里出现的一定是比上一次更老的版本，所以也就没有必要继续记录了，直接drop掉
         drop = true;  // (A)
       } else if (ikey.type == kTypeDeletion &&
                  ikey.sequence <= compact->smallest_snapshot &&
@@ -985,6 +1053,13 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
         //     smaller sequence numbers will be dropped in the next
         //     few iterations of this loop (by rule (A) above).
         // Therefore this deletion marker is obsolete and can be dropped.
+        // 同时满足以下三种情况也将数据做删除处理：
+        // 1. 当前这条数据标记为删除状态(kTypeDeletion)
+        // 2. 当前这条数据的seq小于等于smallest_snapshot，为过去数据  ()
+        // 3. 当前这条数据未落在更高层[level + 2, max_level)的任何一个文件中  (高层没有这个key，无需对应的处理，也就无需保留delete这个状态)
+        //    高层有这个key的话，这里不能删，因为这里删了的话，会默认读到高层更老的key，会出现删除的数据又出现了
+
+        // 若每一层都有这个key，那么这个删除的状态要保留到啥时候???? 一直合并到包含该key的**最高层**，才能真正的把删除key的这条数据清理掉!!
         drop = true;
       }
 
@@ -1003,18 +1078,24 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     if (!drop) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
+        // 创建一个新的table文件，用于存放新的合并后结果
         status = OpenCompactionOutputFile(compact);
         if (!status.ok()) {
           break;
         }
       }
       if (compact->builder->NumEntries() == 0) {
+        // 当前新文件的第一个key，记录为最小key
         compact->current_output()->smallest.DecodeFrom(key);
       }
+      // input.key可以保证是单调递增的，因此直接更新为当前的最大key
       compact->current_output()->largest.DecodeFrom(key);
+      // 将当前数据添加进新的合并后的文件
       compact->builder->Add(key, input->value());
 
       // Close output file if it is big enough
+      // 新的合并后的文件大小超过设置的max_output_file_size_时
+      // 将该文件落盘后释放相信的资源，后续使用需要自行创建新的
       if (compact->builder->FileSize() >=
           compact->compaction->MaxOutputFileSize()) {
         status = FinishCompactionOutputFile(compact, input);
@@ -1030,6 +1111,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   if (status.ok() && shutting_down_.load(std::memory_order_acquire)) {
     status = Status::IOError("Deleting DB during compaction");
   }
+  // 处理最后一个合并出的文件
   if (status.ok() && compact->builder != nullptr) {
     status = FinishCompactionOutputFile(compact, input);
   }
@@ -1054,6 +1136,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   stats_[compact->compaction->level() + 1].Add(stats);
 
   if (status.ok()) {
+    // 生效新生成的合并文件(生成个新版本)
     status = InstallCompactionResults(compact);
   }
   if (!status.ok()) {

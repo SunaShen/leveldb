@@ -22,6 +22,7 @@ enum FileType {
   kLogFile,
   kDBLockFile,
   kTableFile,
+  // MANIFEST文件
   kDescriptorFile,
   kCurrentFile,
   kTempFile,

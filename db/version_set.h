@@ -57,6 +57,7 @@ bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
                            const Slice* smallest_user_key,
                            const Slice* largest_user_key);
 
+// 版本，sstable文件的变更会产生新的版本，如memtable持久化以及sstable文件compact
 class Version {
  public:
   struct GetStats {
@@ -67,11 +68,13 @@ class Version {
   // Append to *iters a sequence of iterators that will
   // yield the contents of this Version when merged together.
   // REQUIRES: This version has been saved (see VersionSet::SaveTo)
+  // 获取所有层的文件的迭代器
   void AddIterators(const ReadOptions&, std::vector<Iterator*>* iters);
 
   // Lookup the value for key.  If found, store it in *val and
   // return OK.  Else return a non-OK status.  Fills *stats.
   // REQUIRES: lock is not held
+  // 在某个版本内通过key查找对应的value
   Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
              GetStats* stats);
 
@@ -101,11 +104,13 @@ class Version {
   // some part of [*smallest_user_key,*largest_user_key].
   // smallest_user_key==nullptr represents a key smaller than all the DB's keys.
   // largest_user_key==nullptr represents a key largest than all the DB's keys.
+  // 判断当前层文件是否有包含[smallest_user_key, largest_user_key]的数据
   bool OverlapInLevel(int level, const Slice* smallest_user_key,
                       const Slice* largest_user_key);
 
   // Return the level at which we should place a new memtable compaction
   // result that covers the range [smallest_user_key,largest_user_key].
+  // 返回一个层级，用于放置范围为[smallest_user_key,largest_user_key]的数据(从immtable新生成的sstable文件)
   int PickLevelForMemTableOutput(const Slice& smallest_user_key,
                                  const Slice& largest_user_key);
 
@@ -145,25 +150,34 @@ class Version {
   void ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
                           bool (*func)(void*, int, FileMetaData*));
 
+  // 版本集合，用于管理所有的版本
   VersionSet* vset_;  // VersionSet to which this Version belongs
+  // 前后版本的指针，实现双向链表
   Version* next_;     // Next version in linked list
   Version* prev_;     // Previous version in linked list
+  // 当前版本的引用计数，归零时自己析构，通常都会被VersionSet持有
   int refs_;          // Number of live refs to this version
 
   // List of files per level
+  // 每一个level的文件集合的FeileMetaData信息
   std::vector<FileMetaData*> files_[config::kNumLevels];
 
   // Next file to compact based on seek stats.
+  // seek模式(采样探测)，下一个需要compact的文件，以及需要compact的层级
   FileMetaData* file_to_compact_;
   int file_to_compact_level_;
 
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
+  // 记录compaction_score合并积分，当大于1时需要尽快合并
   double compaction_score_;
   int compaction_level_;
 };
 
+
+// TODO : version版本什么时候会被删除，还是永远只会增加????
+// 重启或者生成snapshot后老版本的verison就没用了？
 class VersionSet {
  public:
   VersionSet(const std::string& dbname, const Options* options,
@@ -307,7 +321,9 @@ class VersionSet {
   // Opened lazily
   WritableFile* descriptor_file_;
   log::Writer* descriptor_log_;
+  // 双向链表的头部
   Version dummy_versions_;  // Head of circular doubly-linked list of versions.
+  // 当前有效的版本
   Version* current_;        // == dummy_versions_.prev_
 
   // Per-level key at which the next compaction at that level should start.
@@ -326,6 +342,7 @@ class Compaction {
 
   // Return the object that holds the edits to the descriptor done
   // by this compaction.
+  // 记录合并的sstable文件变更信息
   VersionEdit* edit() { return &edit_; }
 
   // "which" must be either 0 or 1
@@ -363,17 +380,21 @@ class Compaction {
 
   Compaction(const Options* options, int level);
 
+  // 当前执行合并的层level，执行合并是将level层的部分文件合并至level+1层
   int level_;
   uint64_t max_output_file_size_;
   Version* input_version_;
   VersionEdit edit_;
 
   // Each compaction reads inputs from "level_" and "level_+1"
+  // 存储本次需要合并的文件信息，inputs_[0] 为当前层level_, inputs_[1]为下一层level_+1
   std::vector<FileMetaData*> inputs_[2];  // The two sets of inputs
 
   // State used to check for number of overlapping grandparent files
   // (parent == level_ + 1, grandparent == level_ + 2)
+  // 存储level_+2层与当前合并的key的范围有交集的文件
   std::vector<FileMetaData*> grandparents_;
+  // 优化策略，用于ShouldStopBefore，判断当前新合并文件与level+2层重叠文件大小，超限需要重新创建，防止后续合并时牵扯过多的文件
   size_t grandparent_index_;  // Index in grandparent_starts_
   bool seen_key_;             // Some output key has been seen
   int64_t overlapped_bytes_;  // Bytes of overlap between current output
@@ -385,6 +406,8 @@ class Compaction {
   // is that we are positioned at one of the file ranges for each
   // higher level than the ones involved in this compaction (i.e. for
   // all L >= level_ + 2).
+  // 记录每一层的遍历到的sstable的位置
+  // 参见Compaction::IsBaseLevelForKey
   size_t level_ptrs_[config::kNumLevels];
 };
 

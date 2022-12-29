@@ -122,7 +122,7 @@ Status TableCache::Get(const ReadOptions& options, uint64_t file_number,
   Status s = FindTable(file_number, file_size, &handle);
   if (s.ok()) {
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-    // 获取指定的key的数据，并执行函数handle_result
+    // 获取指定的key(internal_key)的数据，并执行函数handle_result
     s = t->InternalGet(options, k, arg, handle_result);
     // 引用计数-1
     cache_->Release(handle);

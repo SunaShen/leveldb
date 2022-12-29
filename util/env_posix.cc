@@ -133,12 +133,14 @@ class Limiter {
 //
 // Instances of this class are thread-friendly but not thread-safe, as required
 // by the SequentialFile API.
+// 实现顺序读取文件的功能类
 class PosixSequentialFile final : public SequentialFile {
  public:
   PosixSequentialFile(std::string filename, int fd)
       : fd_(fd), filename_(std::move(filename)) {}
   ~PosixSequentialFile() override { close(fd_); }
 
+  // 从当前文件读取n字节数据放入result中，真实存储这部分数据是在scratch。即result指向scratch
   Status Read(size_t n, Slice* result, char* scratch) override {
     Status status;
     while (true) {
@@ -156,6 +158,7 @@ class PosixSequentialFile final : public SequentialFile {
     return status;
   }
 
+  // 当前读取位置跳过n个字节
   Status Skip(uint64_t n) override {
     if (::lseek(fd_, n, SEEK_CUR) == static_cast<off_t>(-1)) {
       return PosixError(filename_, errno);

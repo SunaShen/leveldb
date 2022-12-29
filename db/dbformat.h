@@ -168,6 +168,7 @@ inline int InternalKeyComparator::Compare(const InternalKey& a,
   return Compare(a.Encode(), b.Encode());
 }
 
+// 从string类型的internal_key中解析出user_key + type + seq
 inline bool ParseInternalKey(const Slice& internal_key,
                              ParsedInternalKey* result) {
   const size_t n = internal_key.size();
@@ -196,9 +197,11 @@ class LookupKey {
   Slice memtable_key() const { return Slice(start_, end_ - start_); }
 
   // Return an internal key (suitable for passing to an internal iterator)
+  // 内部的key，在user_key的后面增加了8个字节，记录seq和type  (s << 8) | type
   Slice internal_key() const { return Slice(kstart_, end_ - kstart_); }
 
   // Return the user key
+  // 原始的用户输入的key
   Slice user_key() const { return Slice(kstart_, end_ - kstart_ - 8); }
 
  private:

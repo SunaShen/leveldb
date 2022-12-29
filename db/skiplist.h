@@ -162,8 +162,10 @@ struct SkipList<Key, Comparator>::Node {
     assert(n >= 0);
     // Use an 'acquire load' so that we observe a fully initialized
     // version of the returned Node.
-    // 直接跳到第n层
-    // TODO: 确定第n层可以取到????
+    // next_后面的空间都是创建node的函数NewNode()根据height指定的
+    // 直接跳到第n层, 确定第n层可以取到????
+    // Node为跳表内部私有成员，仅会被FindGreaterOrEqual\FindLessThan\FindLess使用
+    // 查找元素的时候都是从高level到低level的，可以保证Next时候的n该节点一定包含!!!
     return next_[n].load(std::memory_order_acquire);
   }
   void SetNext(int n, Node* x) {

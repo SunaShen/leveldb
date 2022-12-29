@@ -103,6 +103,7 @@ void WriteBatch::Put(const Slice& key, const Slice& value) {
 }
 
 // TODO: 删除key,增加一个删除类型的key,删除操作何时执行???
+// 将kTypeDeletion标记记录在key的末尾，存储到memtable,以及sstable中
 void WriteBatch::Delete(const Slice& key) {
   WriteBatchInternal::SetCount(this, WriteBatchInternal::Count(this) + 1);
   rep_.push_back(static_cast<char>(kTypeDeletion));
@@ -124,6 +125,7 @@ class MemTableInserter : public WriteBatch::Handler {
     sequence_++;
   }
   void Delete(const Slice& key) override {
+    // 删除状态value为空
     mem_->Add(sequence_, kTypeDeletion, key, Slice());
     sequence_++;
   }

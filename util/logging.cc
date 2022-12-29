@@ -46,6 +46,7 @@ std::string EscapeString(const Slice& value) {
   return r;
 }
 
+// 将字符串数字转换为int型数字
 bool ConsumeDecimalNumber(Slice* in, uint64_t* val) {
   // Constants that will be optimized away.
   constexpr const uint64_t kMaxUint64 = std::numeric_limits<uint64_t>::max();
@@ -65,6 +66,7 @@ bool ConsumeDecimalNumber(Slice* in, uint64_t* val) {
 
     // Overflow check.
     // kMaxUint64 / 10 is also constant and will be optimized away.
+    // 防止数据溢出
     if (value > kMaxUint64 / 10 ||
         (value == kMaxUint64 / 10 && ch > kLastDigitOfMaxUint64)) {
       return false;

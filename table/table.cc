@@ -238,7 +238,7 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
       &Table::BlockReader, const_cast<Table*>(this), options);
 }
 
-// 根据指定的key=k，进行处理
+// 根据指定的key=k，进行处理，此时的k为internal_key
 // 会使用过滤器，提前判断是否包含该key
 // 找到对应key之后会用handle_result函数来处理
 Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
@@ -261,8 +261,9 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
       // 通过BlockReader得到data_block中指定block的迭代器
       Iterator* block_iter = BlockReader(this, options, iiter->value());
       block_iter->Seek(k);
+      // 此时seek到的key是大于等于k的位置，不一定就是要找的key，最终获取时还需要在handle_result中进一步判断
       if (block_iter->Valid()) {
-        // 处理找到的数据
+        // 处理找到的数据，该函数内部判断user_key是否一致，以及是否处于删除状态
         (*handle_result)(arg, block_iter->key(), block_iter->value());
       }
       s = block_iter->status();

@@ -85,7 +85,9 @@ void VersionEdit::EncodeTo(std::string* dst) const {
   }
 }
 
-// 
+// 功能函数：
+// 从input中解析出对应的key，与EncodeTo中编码时的方式对应
+// 解析数据时会修改input后移
 static bool GetInternalKey(Slice* input, InternalKey* dst) {
   Slice str;
   if (GetLengthPrefixedSlice(input, &str)) {
@@ -95,6 +97,9 @@ static bool GetInternalKey(Slice* input, InternalKey* dst) {
   }
 }
 
+// 功能函数
+// 从input中获取level层级，与EncodeTo中编码时的方式对应
+// 解析数据时会修改input后移
 static bool GetLevel(Slice* input, int* level) {
   uint32_t v;
   if (GetVarint32(input, &v) && v < config::kNumLevels) {
