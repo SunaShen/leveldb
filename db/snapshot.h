@@ -14,6 +14,9 @@ class SnapshotList;
 
 // Snapshots are kept in a doubly-linked list in the DB.
 // Each SnapshotImpl corresponds to a particular sequence number.
+// SnapshotImpl作为一个快照节点，用来组成双向环形链表。
+// TODO : 快照节点中仅存储一个seq，具体内容在哪里存储????
+// 环形链表由SnapshotList管理，通过SnapshotList可以创建快照，获取各个版本快照
 class SnapshotImpl : public Snapshot {
  public:
   SnapshotImpl(SequenceNumber sequence_number)
@@ -25,10 +28,11 @@ class SnapshotImpl : public Snapshot {
   friend class SnapshotList;
 
   // SnapshotImpl is kept in a doubly-linked circular list. The SnapshotList
-  // implementation operates on the next/previous fields directly.
+  // implementation operates on the next/previous fields directly.SnapshotImpl作为一个节点，用来组成双向环形链表
   SnapshotImpl* prev_;
   SnapshotImpl* next_;
 
+  // 创建本次快照时的序列号(seq)
   const SequenceNumber sequence_number_;
 
 #if !defined(NDEBUG)
@@ -44,16 +48,19 @@ class SnapshotList {
   }
 
   bool empty() const { return head_.next_ == &head_; }
+  // 获取最老的的快照
   SnapshotImpl* oldest() const {
     assert(!empty());
     return head_.next_;
   }
+  // 获取最新的快照
   SnapshotImpl* newest() const {
     assert(!empty());
     return head_.prev_;
   }
 
   // Creates a SnapshotImpl and appends it to the end of the list.
+  // 创建一个快照节点，并加入双向环形链表中(添加至环形链表的末尾)
   SnapshotImpl* New(SequenceNumber sequence_number) {
     assert(empty() || newest()->sequence_number_ <= sequence_number);
 
@@ -76,6 +83,7 @@ class SnapshotList {
   // The snapshot pointer should not be const, because its memory is
   // deallocated. However, that would force us to change DB::ReleaseSnapshot(),
   // which is in the API, and currently takes a const Snapshot.
+  // 删除快照节点
   void Delete(const SnapshotImpl* snapshot) {
 #if !defined(NDEBUG)
     assert(snapshot->list_ == this);

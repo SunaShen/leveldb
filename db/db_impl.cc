@@ -753,7 +753,9 @@ void DBImpl::BackgroundCompaction() {
   bool is_manual = (manual_compaction_ != nullptr);
   InternalKey manual_end;
   if (is_manual) {
+    // 手动触发合并
     ManualCompaction* m = manual_compaction_;
+    // 根据手动触发合并的信息生成compaction信息
     c = versions_->CompactRange(m->level, m->begin, m->end);
     m->done = (c == nullptr);
     if (c != nullptr) {
@@ -1241,6 +1243,7 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
     } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
       // Done
     } else {
+      // 从当前版本的sstable文件中获取指定key对应的val
       s = current->Get(options, lkey, value, &stats);
       have_stat_update = true;
     }
@@ -1275,11 +1278,13 @@ void DBImpl::RecordReadSample(Slice key) {
   }
 }
 
+// 创建一个新的快照节点,由使用者自行调用
 const Snapshot* DBImpl::GetSnapshot() {
   MutexLock l(&mutex_);
   return snapshots_.New(versions_->LastSequence());
 }
 
+// 释放一个快照节点
 void DBImpl::ReleaseSnapshot(const Snapshot* snapshot) {
   MutexLock l(&mutex_);
   snapshots_.Delete(static_cast<const SnapshotImpl*>(snapshot));

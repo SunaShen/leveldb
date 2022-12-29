@@ -57,6 +57,7 @@ class VersionEdit {
     last_sequence_ = seq;
   }
   // 设置合并点，记录里当前level以及key
+  // 用于size_compact模式，实现同层内文件在不同批次合并中按照从小到大选取第一个合并文件的功能，详见VersionSet::PickCompaction
   void SetCompactPointer(int level, const InternalKey& key) {
     compact_pointers_.push_back(std::make_pair(level, key));
   }
