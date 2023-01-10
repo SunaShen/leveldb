@@ -25,6 +25,12 @@ class BlockBuilder;
 class BlockHandle;
 class WritableFile;
 
+// 用于构造sstable文件
+// 在此构建data_block,filter_block,index_block等信息，存入Rep中
+// 通过Add写入数据，数据都是临时存在各个block内部的内存buffer中
+// 数据data_block每隔固定大小调用Flush输入文件
+// filter_block和index_block在数据写入完毕后最终输入文件，存在文件末尾
+// 并在文件末尾添加footer用于找到filter_block和index_block
 class LEVELDB_EXPORT TableBuilder {
  public:
   // Create a builder that will store the contents of the table it is

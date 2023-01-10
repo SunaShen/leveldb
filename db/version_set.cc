@@ -1737,6 +1737,7 @@ Compaction* VersionSet::CompactRange(int level, const InternalKey* begin,
 Compaction::Compaction(const Options* options, int level)
     : level_(level),
       // 配置的固定值max_file_size = 2 * 1024 * 1024;
+      // TODO : 应该随着level的提升，逐渐增大合并后文件的大小，但当前是固定的大小???
       max_output_file_size_(MaxFileSizeForLevel(options, level)),
       input_version_(nullptr),
       grandparent_index_(0),

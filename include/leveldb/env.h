@@ -48,6 +48,8 @@ class SequentialFile;
 class Slice;
 class WritableFile;
 
+// 对于底层文件操作的抽象
+// 不同操作系统有不同的实现，如：PosixEnv、 WindowsEnv
 class LEVELDB_EXPORT Env {
  public:
   Env();
@@ -290,6 +292,8 @@ class LEVELDB_EXPORT WritableFile {
 };
 
 // An interface for writing log messages.
+// 写日志抽象接口
+// 具体实现：PosixLogger, WindowsLogger
 class LEVELDB_EXPORT Logger {
  public:
   Logger() = default;

@@ -40,6 +40,8 @@ namespace leveldb {
 const int kNumNonTableCacheFiles = 10;
 
 // Information kept for every waiting writer
+// 每一次数据写入都会创建一个Writer,用于持有当前的数据WriteBatch
+// 写入时，多个Writer可以合并成一次写入mmtable，写入完毕通过条件变量通知
 struct DBImpl::Writer {
   explicit Writer(port::Mutex* mu)
       : batch(nullptr), sync(false), done(false), cv(mu) {}
@@ -51,16 +53,18 @@ struct DBImpl::Writer {
   port::CondVar cv;
 };
 
+// 记录发生合并后的sstable文件相关信息(新的文件信息output, TableBuilder等)
 struct DBImpl::CompactionState {
   // Files produced by compaction
-  // 合并后生成文件的信息，类似FileMetaData???
+  // 合并后生成文件的信息，简化版的FileMetaData
+  // FileMetaData中还支持引用计数ref和文件被无效访问次数allowed_seeks
   struct Output {
     uint64_t number;
     uint64_t file_size;
     InternalKey smallest, largest;
   };
 
-  // 返回最后一个文件
+  // 返回当前使用的合并后文件
   Output* current_output() { return &outputs[outputs.size() - 1]; }
 
   explicit CompactionState(Compaction* c)
@@ -76,13 +80,15 @@ struct DBImpl::CompactionState {
   // will never have to service a snapshot below smallest_snapshot.
   // Therefore if we have seen a sequence number S <= smallest_snapshot,
   // we can drop all entries for the same key with sequence numbers < S.
-  // 小于该序列号(smallest_snapshot)的信息都将别忽略，过时的信息
+  // 对于重复的key首先保留一个最新版本保底，将剩余小于该序列号的信息直接drop，不再合入到新的sstable文件中
+  // 在无快照时，smallest_snapshot取值使用的是当前的版本，意图明显：对于重复key仅保留一个最新的。
   SequenceNumber smallest_snapshot;
 
   // 记录本次合并期间生成的合并后的多个文件的信息
   std::vector<Output> outputs;
 
   // State kept for output being generated
+  // 生成新的合并后的sstable文件时，使用的TableBuilder(生成sstable文件)
   WritableFile* outfile;
   TableBuilder* builder;
 
@@ -95,6 +101,7 @@ static void ClipToRange(T* ptr, V minvalue, V maxvalue) {
   if (static_cast<V>(*ptr) > maxvalue) *ptr = maxvalue;
   if (static_cast<V>(*ptr) < minvalue) *ptr = minvalue;
 }
+// 生成db的配置
 Options SanitizeOptions(const std::string& dbname,
                         const InternalKeyComparator* icmp,
                         const InternalFilterPolicy* ipolicy,
@@ -1029,21 +1036,15 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
       if (last_sequence_for_key <= compact->smallest_snapshot) {
         // Hidden by an newer entry for same user key
-
-        // 前一个key 小于等于 smallest_snapshot，可以表明这个key是在触发合并操作之前执行的变更。因此可以进行冗余处理。
-        // 而若last_sequence_for_key > smallest_snapshot, 则表示是触发合并操作之后又触发了新的变更
-        // (哪种情况会发生??MakeInputIterator已经固定了就是这批文件, snapshots_.empty()时smallest_snapshot取的是LastSequence，不会发生)
-        // TODO : !snapshots_.empty()情况下，使用snapshots的seq，此时待了解snapshots后分析
-        // if (snapshots_.empty()) {
-        //   compact->smallest_snapshot = versions_->LastSequence();
-        // } else {
-        //   compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
-        // }
-        // 此时还没轮到你compact，所以还是先保留着吧
-
         // 当前key和前一个key相等(因为不相等的情况下会被更新为kMaxSequenceNumber)
         // 多个相同的key，只会保留第一个，input->Next对于user_key相等的数据，优先返回seq更大的。
         // 因此当上一轮已经出现过这个user_key之后，这里出现的一定是比上一次更老的版本，所以也就没有必要继续记录了，直接drop掉
+
+        // 前一个key 小于等于 smallest_snapshot，可以表明这个key是在触发合并操作之前执行的变更。
+        // 而若last_sequence_for_key > smallest_snapshot, 则表示是触发合并操作之后又触发了新的变更, 不按照这一套来执行。
+        // 即要保留小于last_sequence_for_key的最新的一个数据。对于比合并时版本更新的的数据则直接保留。
+        // TODO : 哪种情况会发生??last_sequence_for_key > smallest_snapshot.
+        // MakeInputIterator已经固定了就是这批文件, snapshots_.empty()时smallest_snapshot取的是LastSequence，不会发生
         drop = true;  // (A)
       } else if (ikey.type == kTypeDeletion &&
                  ikey.sequence <= compact->smallest_snapshot &&
@@ -1216,6 +1217,7 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key,
   Status s;
   MutexLock l(&mutex_);
   SequenceNumber snapshot;
+  // 本次读取数据有指定快照snapshot，那么读取快照指定seq的数据，否则使用当前的seq
   if (options.snapshot != nullptr) {
     snapshot =
         static_cast<const SnapshotImpl*>(options.snapshot)->sequence_number();

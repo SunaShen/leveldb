@@ -14,6 +14,7 @@
 
 namespace leveldb {
 
+// 根据mem_table中的数据(iter),生成sstable文件，并将该新文件缓存至table_cache
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta) {
   Status s;

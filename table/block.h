@@ -15,6 +15,9 @@ namespace leveldb {
 struct BlockContents;
 class Comparator;
 
+// BlockContents用于存储读取出的一个block的原始数据
+// Block将这处理这些数据，使得数据可以直接通过迭代器直接访问
+// 对于数据的解析都屏蔽在Block::Iter中，其中包括对于重启点数据的的处理，以及数据查找的实现
 class Block {
  public:
   // Initialize the block with the specified contents.

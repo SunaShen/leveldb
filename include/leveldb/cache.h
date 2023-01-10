@@ -31,6 +31,8 @@ class LEVELDB_EXPORT Cache;
 // of Cache uses a least-recently-used eviction policy.
 LEVELDB_EXPORT Cache* NewLRUCache(size_t capacity);
 
+// 对于缓存的抽象接口
+// 具体实现 class ShardedLRUCache
 class LEVELDB_EXPORT Cache {
  public:
   Cache() = default;
@@ -54,6 +56,9 @@ class LEVELDB_EXPORT Cache {
   //
   // When the inserted entry is no longer needed, the key and
   // value will be passed to "deleter".
+  // 向缓存中添加数据
+  // 记录k-v的映射，其中value存储的是指针，而不是实际内容，该value对应内存的的大小使用charge记录
+  // 提供回调函数deleter，用于在数据过期时执行
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
                          void (*deleter)(const Slice& key, void* value)) = 0;
 
