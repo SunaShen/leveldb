@@ -51,10 +51,11 @@ struct LRUHandle {
   LRUHandle* next_hash;
   LRUHandle* next;
   LRUHandle* prev;
-  // TODO : 作用???
+  // 记录数据大小
   size_t charge;  // TODO(opt): Only allow uint32_t?
   // 存储的key的具体长度
   size_t key_length;
+  // 是否在cache(双向链表)中
   bool in_cache;     // Whether entry is in the cache.
   // 引用计数
   uint32_t refs;     // References, including cache reference, if present.
@@ -79,6 +80,7 @@ struct LRUHandle {
 // table implementations in some of the compiler/runtime combinations
 // we have tested.  E.g., readrandom speeds up by ~5% over the g++
 // 4.4.3's builtin hashtable.
+// 作用：通过key映射到对应的节点，方便快速定位到在双向环形链表中的节点
 class HandleTable {
  public:
   HandleTable() : length_(0), elems_(0), list_(nullptr) { Resize(); }
@@ -96,7 +98,9 @@ class HandleTable {
     h->next_hash = (old == nullptr ? nullptr : old->next_hash);
     *ptr = h;
     if (old == nullptr) {
+      // 当前节点使用了一个新的分桶
       ++elems_;
+      // 为了防止频繁的哈希冲突，当所有分桶数都有值时，需要重新分配更多的分桶
       if (elems_ > length_) {
         // Since each cache entry is fairly large, we aim for a small
         // average linked list length (<= 1).
@@ -120,9 +124,10 @@ class HandleTable {
  private:
   // The table consists of an array of buckets where each bucket is
   // a linked list of cache entries that hash into the bucket.
+  // 创建很多分桶，每个分桶中是一串节点，各个节点使用next_hash连接
   // 分桶的数量
   uint32_t length_;
-  // 节点的数量
+  // 当前使用的分桶的数量
   uint32_t elems_;
   LRUHandle** list_;
 
@@ -153,7 +158,7 @@ class HandleTable {
     for (uint32_t i = 0; i < length_; i++) {
       LRUHandle* h = list_[i];
       // 将老的list的数据依次转移至new_lsit
-      // 节点连接顺序反过来了
+      // 节点连接顺序反过来了(hash_table中顺序不影响)
       while (h != nullptr) {
         LRUHandle* next = h->next_hash;
         uint32_t hash = h->hash;
@@ -315,17 +320,19 @@ Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
   if (capacity_ > 0) {
     e->refs++;  // for the cache's reference.
     e->in_cache = true;
-    // 将新节点加入in_use_队列
+    // 将新节点加入in_use_链表
     LRU_Append(&in_use_, e);
     usage_ += charge;
-    // 加入hash_table中，通过key就可以找到当前handle的指针e
+    // 加入hash_table中，后续通过key就可以找到当前handle的指针e
     // 若已经有了这个key，Insert返回相同key的老节点，使用FinishErase将该节点从lru链表中移除，并释放
     FinishErase(table_.Insert(e));
   } else {  // don't cache. (capacity_==0 is supported and turns off caching.)
     // next is read by key() in an assert, so it must be initialized
     e->next = nullptr;
   }
-  // LRU达到限制值，淘汰最老的节点
+  // LRU达到限制值，淘汰未使用的最老的节点
+  // lru_链表中都是没有使用的节点，从中删除节点
+  // 若使用空间超了，但是lru_为空，那就暂时不处理.(所有节点都在使用,ref>1,在in_use链表中)
   while (usage_ > capacity_ && lru_.next != &lru_) {
     LRUHandle* old = lru_.next;
     assert(old->refs == 1);
