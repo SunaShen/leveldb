@@ -102,7 +102,7 @@ void WriteBatch::Put(const Slice& key, const Slice& value) {
   PutLengthPrefixedSlice(&rep_, value);
 }
 
-// TODO: 删除key,增加一个删除类型的key,删除操作何时执行???
+// 删除key,增加一个删除类型的key,存储进sstable中,在sstable文件合并时才会处理(不合并进新文件),详见DoCompactionWork中逻辑
 // 将kTypeDeletion标记记录在key的末尾，存储到memtable,以及sstable中
 void WriteBatch::Delete(const Slice& key) {
   WriteBatchInternal::SetCount(this, WriteBatchInternal::Count(this) + 1);

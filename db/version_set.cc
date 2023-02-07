@@ -634,6 +634,7 @@ void Version::GetOverlappingInputs(int level, const InternalKey* begin,
   }
 }
 
+// 输出当前版本各个sstable的meta信息
 std::string Version::DebugString() const {
   std::string r;
   for (int level = 0; level < config::kNumLevels; level++) {
@@ -996,7 +997,7 @@ Status VersionSet::LogAndApply(VersionEdit* edit, port::Mutex* mu) {
   return s;
 }
 
-// 外部调用
+// DBImpl::Recover中调用
 // 根据日志恢复出版本管理器(version_set)，并将所有版本信息合成一个新的版本
 Status VersionSet::Recover(bool* save_manifest) {
   struct LogReporter : public log::Reader::Reporter {

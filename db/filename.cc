@@ -122,15 +122,21 @@ bool ParseFileName(const std::string& filename, uint64_t* number,
   return true;
 }
 
+// 设置当前的manifest
 Status SetCurrentFile(Env* env, const std::string& dbname,
                       uint64_t descriptor_number) {
   // Remove leading "dbname/" and add newline to manifest file name
   std::string manifest = DescriptorFileName(dbname, descriptor_number);
   Slice contents = manifest;
   assert(contents.starts_with(dbname + "/"));
+  // contents = MANIFEST-descriptor_number
   contents.remove_prefix(dbname.size() + 1);
+  // tmp = dbname/descriptor_number.dbtmp
   std::string tmp = TempFileName(dbname, descriptor_number);
+  // 将内容"MANIFEST-descriptor_number\n"写入临时文件tmp中
   Status s = WriteStringToFileSync(env, contents.ToString() + "\n", tmp);
+  // 将临时文件tmp改名为dbname/CURRENT，生效使用
+  // 这里先将内容准备好，在rename，防止使用到写入一半的内容
   if (s.ok()) {
     s = env->RenameFile(tmp, CurrentFileName(dbname));
   }
